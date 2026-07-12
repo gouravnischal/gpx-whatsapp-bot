@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: gpx-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: VERIFY_TOKEN
+        sync: false
+      - key: PAGE_ACCESS_TOKEN
+        sync: false
+      - key: IG_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_TOKEN
+        sync: false
+      - key: PHONE_NUMBER_ID
+        sync: false
+      - key: AGENT_NOTIFY_NUMBER
+        sync: false
+      - key: GRAPH_API_VERSION
+        value: v20.0
+      - key: BUSINESS_NAME
+        value: GPX Express Courier
+      - key: CONTACT_EMAIL
+        value: gpxsupports@outlook.com
+      - key: TRACKING_WEBSITE
+        value: https://www.gpxexpress.com
+      - key: BULK_THRESHOLD_KG
+        value: "71"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
