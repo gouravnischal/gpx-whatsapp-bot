@@ -16,7 +16,9 @@ DB_PATH = os.getenv("GPX_DB_PATH", "gpx_bot.db")
 
 @contextmanager
 def _conn():
-    con = sqlite3.connect(DB_PATH, timeout=10)
+    con = sqlite3.connect(DB_PATH, timeout=15, check_same_thread=False)
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA busy_timeout=15000")
     con.row_factory = sqlite3.Row
     try:
         yield con
