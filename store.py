@@ -16,7 +16,7 @@ DB_PATH = os.getenv("GPX_DB_PATH", "gpx_bot.db")
 
 @contextmanager
 def _conn():
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(DB_PATH, timeout=10)
     con.row_factory = sqlite3.Row
     try:
         yield con
