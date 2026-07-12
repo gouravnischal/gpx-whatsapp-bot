@@ -3,28 +3,45 @@
 A tiny, dependency-free store. The DB file is created automatically on first run.
 Sessions hold the current conversation state + collected fields so the bot can
 carry a multi-step conversation across messages.
+
+Uses a single shared connection + threading lock to avoid "database is locked"
+errors from concurrent webhook requests and background workers.
 """
 import json
 import os
 import sqlite3
+import threading
 import time
 from contextlib import contextmanager
 
 # Override with the GPX_DB_PATH env var (e.g. a persistent disk path in prod).
 DB_PATH = os.getenv("GPX_DB_PATH", "gpx_bot.db")
 
+_lock = threading.Lock()
+_shared_conn = None
+
+
+def _get_conn():
+    """Return the single shared connection, creating it on first call."""
+    global _shared_conn
+    if _shared_conn is None:
+        _shared_conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        _shared_conn.execute("PRAGMA journal_mode=WAL")
+        _shared_conn.execute("PRAGMA busy_timeout=15000")
+        _shared_conn.row_factory = sqlite3.Row
+    return _shared_conn
+
 
 @contextmanager
 def _conn():
-    con = sqlite3.connect(DB_PATH, timeout=15, check_same_thread=False)
-    con.execute("PRAGMA journal_mode=WAL")
-    con.execute("PRAGMA busy_timeout=15000")
-    con.row_factory = sqlite3.Row
-    try:
-        yield con
-        con.commit()
-    finally:
-        con.close()
+    with _lock:
+        con = _get_conn()
+        try:
+            yield con
+            con.commit()
+        except Exception:
+            con.rollback()
+            raise
 
 
 def init_db():
