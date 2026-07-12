@@ -4,44 +4,31 @@ A tiny, dependency-free store. The DB file is created automatically on first run
 Sessions hold the current conversation state + collected fields so the bot can
 carry a multi-step conversation across messages.
 
-Uses a single shared connection + threading lock to avoid "database is locked"
-errors from concurrent webhook requests and background workers.
+Uses WAL journal mode with generous busy_timeout for thread safety.
+Runs behind Gunicorn with --workers 1 --threads 4 so all threads share
+one process and WAL handles concurrency without locking issues.
 """
 import json
 import os
 import sqlite3
-import threading
 import time
 from contextlib import contextmanager
 
 # Override with the GPX_DB_PATH env var (e.g. a persistent disk path in prod).
 DB_PATH = os.getenv("GPX_DB_PATH", "gpx_bot.db")
 
-_lock = threading.Lock()
-_shared_conn = None
-
-
-def _get_conn():
-    """Return the single shared connection, creating it on first call."""
-    global _shared_conn
-    if _shared_conn is None:
-        _shared_conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-        _shared_conn.execute("PRAGMA journal_mode=WAL")
-        _shared_conn.execute("PRAGMA busy_timeout=15000")
-        _shared_conn.row_factory = sqlite3.Row
-    return _shared_conn
-
 
 @contextmanager
 def _conn():
-    with _lock:
-        con = _get_conn()
-        try:
-            yield con
-            con.commit()
-        except Exception:
-            con.rollback()
-            raise
+    con = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA busy_timeout=30000")
+    con.row_factory = sqlite3.Row
+    try:
+        yield con
+        con.commit()
+    finally:
+        con.close()
 
 
 def init_db():
@@ -79,6 +66,26 @@ def init_db():
             " user_input TEXT UNIQUE,"
             " maps_to TEXT,"
             " added_by TEXT DEFAULT 'auto',"
+            " created REAL)"
+        )
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS follow_ups ("
+            " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " channel TEXT,"
+            " user_id TEXT,"
+            " message TEXT,"
+            " send_after REAL,"
+            " sent INTEGER DEFAULT 0,"
+            " created REAL)"
+        )
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS media_log ("
+            " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " wa_id TEXT,"
+            " channel TEXT,"
+            " media_type TEXT,"
+            " media_id TEXT,"
+            " caption TEXT,"
             " created REAL)"
         )
 
